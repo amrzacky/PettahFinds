@@ -98,12 +98,22 @@ class ProfileScreen extends ConsumerWidget {
                       _MenuItem(
                         icon: Icons.person_outline_rounded,
                         label: 'Edit Profile',
-                        onTap: () => context.go('/profile/settings'),
+                        onTap: () {
+                          ScaffoldMessenger.of(context).clearSnackBars();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Coming soon')),
+                          );
+                        },
                       ),
                       _MenuItem(
                         icon: Icons.lock_outline_rounded,
                         label: 'Change Password',
-                        onTap: () => context.go('/profile/settings'),
+                        onTap: () {
+                          ScaffoldMessenger.of(context).clearSnackBars();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Coming soon')),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -114,6 +124,11 @@ class ProfileScreen extends ConsumerWidget {
                   _SectionCard(
                     label: 'MARKETPLACE ACTIVITY',
                     items: [
+                      _MenuItem(
+                        icon: Icons.forum_outlined,
+                        label: 'Messages',
+                        onTap: () => context.go('/chat'),
+                      ),
                       _MenuItem(
                         icon: Icons.bookmark_outline_rounded,
                         label: 'My Saved Items',
@@ -149,7 +164,12 @@ class ProfileScreen extends ConsumerWidget {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        onTap: () {},
+                        onTap: () {
+                          ScaffoldMessenger.of(context).clearSnackBars();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Coming soon')),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -233,7 +253,9 @@ class ProfileScreen extends ConsumerWidget {
                     ),
                   ),
 
-                  const SizedBox(height: 32),
+                  // Bottom pad clears the floating bottom nav (~90 px)
+                  // plus safe-area so the Sign Out button is fully visible.
+                  const SizedBox(height: 120),
                 ],
               ),
             ),

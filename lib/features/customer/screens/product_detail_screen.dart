@@ -4,9 +4,11 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/extensions/context_extensions.dart';
 import '../../../models/business.dart';
 import '../../../models/favorite.dart';
 import '../../../models/product.dart';
+import '../../../models/report.dart';
 import '../../../widgets/cached_image.dart';
 import '../../../widgets/shimmer_loading.dart';
 import '../../../widgets/error_widget.dart';
@@ -294,6 +296,9 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                           ),
                         ),
 
+                        const SizedBox(height: 16),
+                        const _PlatformDisclaimer(),
+
                         const SizedBox(height: 24),
                         const Divider(color: AppColors.border, height: 1),
                         const SizedBox(height: 20),
@@ -308,8 +313,10 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                         ),
                         const SizedBox(height: 12),
                         businessAsync.when(
-                          data: (business) =>
-                              _SellerCard(business: business),
+                          data: (business) => _SellerCard(
+                            business: business,
+                            productTitle: product.title,
+                          ),
                           loading: () =>
                               const ShimmerBox(height: 80, radius: 12),
                           error: (_, _) => OutlinedButton.icon(
@@ -319,6 +326,24 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                                     '/home/business/${product.businessId}'),
                             icon: const Icon(Icons.store),
                             label: const Text('View Business'),
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+                        Center(
+                          child: TextButton.icon(
+                            onPressed: () => _openReportSheet(
+                                context, ref, product.id),
+                            icon: const Icon(Icons.flag_outlined,
+                                size: 16, color: AppColors.text3),
+                            label: Text(
+                              'Report product',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.text3,
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -355,21 +380,25 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
 
 class _SellerCard extends StatelessWidget {
   final Business business;
-  const _SellerCard({required this.business});
+  final String productTitle;
+  const _SellerCard({required this.business, required this.productTitle});
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => context.go('/home/business/${business.id}'),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.bg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: () => context.go('/home/business/${business.id}'),
+            borderRadius: BorderRadius.circular(8),
+            child: Row(
           children: [
             Container(
               decoration: BoxDecoration(
@@ -452,6 +481,321 @@ class _SellerCard extends StatelessWidget {
                 color: AppColors.text3),
           ],
         ),
+          ),
+          const SizedBox(height: 10),
+          _ChatSellerButton(business: business),
+        ],
+      ),
+    );
+  }
+}
+
+/// Teal "Chat Seller" CTA. Reads the auth/app-user state so:
+///   - guests get redirected to sign-in,
+///   - the seller viewing their own product sees no button at all,
+///   - other signed-in users open (or create) a thread and navigate to it.
+class _ChatSellerButton extends ConsumerStatefulWidget {
+  final Business business;
+  const _ChatSellerButton({required this.business});
+
+  @override
+  ConsumerState<_ChatSellerButton> createState() =>
+      _ChatSellerButtonState();
+}
+
+class _ChatSellerButtonState extends ConsumerState<_ChatSellerButton> {
+  bool _opening = false;
+
+  Future<void> _onTap(BuildContext context, String productId) async {
+    if (_opening) return;
+    final appUser = ref.read(appUserProvider).valueOrNull;
+    if (appUser == null) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sign in to message sellers')),
+      );
+      // Small delay so the snackbar shows before the route swap.
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      if (!context.mounted) return;
+      context.go('/sign-in');
+      return;
+    }
+    setState(() => _opening = true);
+    try {
+      final product = ref
+          .read(_productDetailProvider(productId))
+          .valueOrNull;
+      if (product == null) {
+        throw Exception('Product not loaded yet.');
+      }
+      final conv = await ref.read(chatServiceProvider).openConversation(
+            product: product,
+            business: widget.business,
+            customerId: appUser.uid,
+          );
+      if (!context.mounted) return;
+      context.go('/chat/${conv.id}');
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open chat: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appUser = ref.watch(appUserProvider).valueOrNull;
+    // Seller viewing own product — no point chatting yourself.
+    if (appUser != null &&
+        appUser.isBusiness &&
+        appUser.uid == widget.business.ownerUid) {
+      return const SizedBox.shrink();
+    }
+    final productId =
+        (context.findAncestorWidgetOfExactType<ProductDetailScreen>())
+                ?.productId ??
+            '';
+    return SizedBox(
+      height: 44,
+      child: FilledButton.icon(
+        onPressed: _opening ? null : () => _onTap(context, productId),
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.teal,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+        icon: _opening
+            ? const SizedBox(
+                height: 16,
+                width: 16,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
+              )
+            : const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+        label: Text(
+          _opening ? 'Opening...' : 'Chat Seller',
+          style: GoogleFonts.dmSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlatformDisclaimer extends StatelessWidget {
+  const _PlatformDisclaimer();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.bgSection,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, size: 14, color: AppColors.text4),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Listed by an independent business. PetaFinds does not sell, '
+              'verify, or guarantee this product.',
+              style: GoogleFonts.dmSans(
+                fontSize: 11.5,
+                color: AppColors.text3,
+                height: 1.45,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+void _openReportSheet(BuildContext context, WidgetRef ref, String productId) {
+  final appUser = ref.read(appUserProvider).valueOrNull;
+  if (appUser == null) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    showSignInRequiredSheet(context);
+    return;
+  }
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: AppColors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => _ReportProductSheet(
+      productId: productId,
+      userId: appUser.uid,
+    ),
+  );
+}
+
+class _ReportProductSheet extends ConsumerStatefulWidget {
+  final String productId;
+  final String userId;
+  const _ReportProductSheet({
+    required this.productId,
+    required this.userId,
+  });
+
+  @override
+  ConsumerState<_ReportProductSheet> createState() =>
+      _ReportProductSheetState();
+}
+
+class _ReportProductSheetState extends ConsumerState<_ReportProductSheet> {
+  static const _reasons = [
+    'Fake product',
+    'Misleading price',
+    'Wrong information',
+    'Illegal item',
+    'Other',
+  ];
+
+  String? _selected;
+  final _detailsCtrl = TextEditingController();
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _detailsCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_submitting) return;
+    if (_selected == null) {
+      context.showErrorSnackBar('Please pick a reason');
+      return;
+    }
+    setState(() => _submitting = true);
+    try {
+      await ref
+          .read(reportRepositoryProvider)
+          .submit(Report(
+            id: '',
+            userId: widget.userId,
+            productId: widget.productId,
+            targetType: 'product',
+            reason: _selected!,
+            details: _detailsCtrl.text.trim().isEmpty
+                ? null
+                : _detailsCtrl.text.trim(),
+            status: 'pending',
+            createdAt: DateTime.now(),
+          ))
+          .timeout(const Duration(seconds: 15),
+              onTimeout: () =>
+                  throw Exception('Report timed out. Try again.'));
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      context.showSuccessSnackBar('Report submitted. Thank you.');
+    } catch (e) {
+      if (mounted) {
+        setState(() => _submitting = false);
+        context.showErrorSnackBar(e);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inset = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + inset),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          Text('Report product',
+              style: GoogleFonts.nunito(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppColors.text1,
+                letterSpacing: -0.3,
+              )),
+          const SizedBox(height: 4),
+          Text('Help us keep PetaFinds safe.',
+              style: GoogleFonts.dmSans(
+                fontSize: 12.5,
+                color: AppColors.text3,
+              )),
+          const SizedBox(height: 16),
+          ..._reasons.map((r) => RadioListTile<String>(
+                value: r,
+                groupValue: _selected,
+                onChanged: (v) => setState(() => _selected = v),
+                title: Text(r,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.text1,
+                    )),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                activeColor: AppColors.teal,
+              )),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _detailsCtrl,
+            maxLines: 3,
+            maxLength: 500,
+            decoration: InputDecoration(
+              hintText: 'Add details (optional)',
+              hintStyle: GoogleFonts.dmSans(
+                fontSize: 13,
+                color: AppColors.text4,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AppColors.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AppColors.border),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 48,
+            child: FilledButton(
+              onPressed: _submitting ? null : _submit,
+              child: _submitting
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Text('Submit report'),
+            ),
+          ),
+        ],
       ),
     );
   }
