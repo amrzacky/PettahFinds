@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -19,6 +20,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   List<Product> _products = [];
   bool _loading = false;
   bool _searched = false;
+  Timer? _debounce;
 
   @override
   void initState() {
@@ -26,8 +28,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _searchCtrl.addListener(_onQueryChanged);
   }
 
+  // Debounce live search so typing "phone" fires once at the end of the
+  // typing burst instead of 5 separate Firestore reads. We pass
+  // `keepFocus: true` so the keyboard stays open across debounced
+  // searches — only an explicit submit (search button on the keyboard)
+  // dismisses focus.
   void _onQueryChanged() {
     if (mounted) setState(() {});
+    _debounce?.cancel();
+    final q = _searchCtrl.text.trim();
+    if (q.isEmpty) return;
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      if (_searchCtrl.text.trim() == q) _search(keepFocus: true);
+    });
   }
 
   void _resetResults() {
@@ -40,16 +54,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchCtrl.removeListener(_onQueryChanged);
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _search() async {
+  Future<void> _search({bool keepFocus = false}) async {
     if (_loading) return;
     final query = _searchCtrl.text.trim();
     if (query.isEmpty) return;
-    FocusScope.of(context).unfocus();
+    // Only dismiss the keyboard on explicit submit. Debounced live searches
+    // pass `keepFocus: true` so the keyboard stays open while the user
+    // continues typing (otherwise the cursor disappears every 350ms).
+    if (!keepFocus) FocusScope.of(context).unfocus();
     setState(() {
       _loading = true;
       _searched = true;

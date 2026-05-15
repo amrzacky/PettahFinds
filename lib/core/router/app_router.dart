@@ -11,6 +11,7 @@ import '../../features/customer/screens/customer_shell.dart';
 import '../../features/customer/screens/home_screen.dart';
 import '../../features/customer/screens/map_screen.dart';
 import '../../features/customer/screens/search_screen.dart';
+import '../../features/customer/screens/business_search_screen.dart';
 import '../../features/customer/screens/category_businesses_screen.dart';
 import '../../features/customer/screens/businesses_list_screen.dart';
 import '../../features/customer/screens/business_detail_screen.dart';
@@ -20,6 +21,9 @@ import '../../features/customer/screens/favorites_screen.dart';
 import '../../features/customer/screens/profile_screen.dart';
 import '../../features/customer/screens/notifications_screen.dart';
 import '../../features/customer/screens/settings_screen.dart';
+import '../../features/customer/screens/edit_customer_profile_screen.dart';
+import '../../features/customer/screens/change_password_screen.dart';
+import '../../features/customer/screens/support_screen.dart';
 import '../../features/business/screens/business_shell.dart';
 import '../../features/business/screens/business_dashboard_screen.dart';
 import '../../features/business/screens/business_setup_screen.dart';
@@ -79,6 +83,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!isLoggedIn) {
         final needsAuth = currentPath.startsWith('/business') ||
             currentPath.startsWith('/business-profile') ||
+            currentPath.startsWith('/business-messages') ||
             currentPath.startsWith('/business-settings') ||
             currentPath.startsWith('/admin');
         if (needsAuth) return '/sign-in';
@@ -115,6 +120,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         // chosen — otherwise force to setup.
         if (currentPath.startsWith('/business') ||
             currentPath.startsWith('/business-profile') ||
+            currentPath.startsWith('/business-messages') ||
             currentPath.startsWith('/business-settings') ||
             currentPath.startsWith('/home') ||
             currentPath.startsWith('/admin')) {
@@ -127,6 +133,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       final inBusinessShell = currentPath == '/business/setup' ||
           currentPath.startsWith('/business') ||
           currentPath.startsWith('/business-profile') ||
+          currentPath.startsWith('/business-messages') ||
           currentPath.startsWith('/business-settings');
       final inCustomerShell = currentPath.startsWith('/home') ||
           currentPath.startsWith('/search') ||
@@ -238,6 +245,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           StatefulShellBranch(routes: [
             GoRoute(path: '/search', builder: (_, __) => const SearchScreen()),
+            // Businesses-side search, opened from the map screen's pill.
+            // Sibling of /search on the same shell branch so the bottom nav
+            // stays in place and the existing `startsWith('/search')`
+            // redirect rule already covers it.
+            GoRoute(
+                path: '/search-businesses',
+                builder: (_, __) => const BusinessSearchScreen()),
           ]),
           StatefulShellBranch(routes: [
             GoRoute(path: '/map', builder: (_, __) => const MapScreen()),
@@ -258,6 +272,16 @@ final routerProvider = Provider<GoRouter>((ref) {
                 GoRoute(
                     path: 'notifications',
                     builder: (_, __) => const NotificationsScreen()),
+                GoRoute(
+                    path: 'edit',
+                    builder: (_, __) =>
+                        const EditCustomerProfileScreen()),
+                GoRoute(
+                    path: 'password',
+                    builder: (_, __) => const ChangePasswordScreen()),
+                GoRoute(
+                    path: 'support',
+                    builder: (_, __) => const SupportScreen()),
               ],
             ),
           ]),
@@ -313,6 +337,15 @@ final routerProvider = Provider<GoRouter>((ref) {
                   builder: (_, __) => const EditBusinessProfileScreen(),
                 ),
               ],
+            ),
+          ]),
+          // Messages branch — keeps the bottom nav visible while merchant
+          // browses chats. Reuses the same ChatListScreen the customer
+          // header icon opens; ChatListScreen self-detects role.
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/business-messages',
+              builder: (_, __) => const ChatListScreen(),
             ),
           ]),
           StatefulShellBranch(routes: [

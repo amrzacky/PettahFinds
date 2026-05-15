@@ -284,7 +284,7 @@ class _TealHeader extends ConsumerWidget {
                   ),
                 ],
               ),
-              // Right: heart + bell
+              // Right: heart + messages + bell
               Row(
                 children: [
                   _HeaderIconButton(
@@ -300,6 +300,18 @@ class _TealHeader extends ConsumerWidget {
                   ),
                   const SizedBox(width: 4),
                   _HeaderIconButton(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    onTap: () {
+                      if (isGuest) {
+                        ScaffoldMessenger.of(context).clearSnackBars();
+                        showSignInRequiredSheet(context);
+                      } else {
+                        context.go('/chat');
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                  _HeaderIconButton(
                     icon: Icons.notifications_none_rounded,
                     onTap: () {
                       if (isGuest) {
@@ -309,7 +321,6 @@ class _TealHeader extends ConsumerWidget {
                         context.go('/profile/notifications');
                       }
                     },
-                    badgeCount: 3,
                   ),
                 ],
               ),
@@ -361,11 +372,9 @@ class _TealHeader extends ConsumerWidget {
 class _HeaderIconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
-  final int? badgeCount;
   const _HeaderIconButton({
     required this.icon,
     required this.onTap,
-    this.badgeCount,
   });
 
   @override
@@ -376,44 +385,14 @@ class _HeaderIconButton extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         child: Center(
-          child: Stack(
-            clipBehavior: Clip.none,
+          child: Container(
+            width: 38,
+            height: 38,
             alignment: Alignment.center,
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: Colors.white, size: 20),
-              ),
-              if (badgeCount != null)
-                Positioned(
-                  top: 4,
-                  right: 4,
-                  child: Container(
-                    width: 14,
-                    height: 14,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: AppColors.orange,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: AppColors.tealDark, width: 1.5),
-                    ),
-                    child: Text(
-                      '$badgeCount',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 7.5,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: Colors.white, size: 20),
           ),
         ),
       ),
@@ -1287,17 +1266,30 @@ class _HeartButton extends ConsumerWidget {
             .contains(productId);
 
     return GestureDetector(
-      onTap: () {
+      onTap: () async {
         if (authUser == null) {
           ScaffoldMessenger.of(context).clearSnackBars();
           showSignInRequiredSheet(context);
           return;
         }
-        ref.read(favoriteRepositoryProvider).toggle(
-              userId: authUser.uid,
-              targetType: 'product',
-              targetId: productId,
+        // Awaited so a permission-denied (e.g. rules not yet deployed)
+        // surfaces a snackbar instead of being silently swallowed by the
+        // unawaited Future. The streamed favorite set updates the icon
+        // optimistically as soon as Firestore acks the write.
+        try {
+          await ref.read(favoriteRepositoryProvider).toggle(
+                userId: authUser.uid,
+                targetType: 'product',
+                targetId: productId,
+              );
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).clearSnackBars();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Could not update favorite: $e')),
             );
+          }
+        }
       },
       child: Container(
         width: size,
